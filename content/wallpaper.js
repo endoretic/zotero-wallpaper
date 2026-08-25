@@ -211,8 +211,11 @@ var ZoteroWallpaper = {
 #zotero-pane #zotero-item-pane-content,
 #zotero-pane .virtualized-table-container,
 #zotero-pane .virtualized-table,
+#zotero-pane .virtualized-table-header,
+#zotero-pane .virtualized-table-header .cell,
 #zotero-pane .virtualized-table .body,
 #zotero-pane .item-pane-content,
+#zotero-pane .zotero-view-item-main,
 #zotero-pane item-details {
 	background-color: transparent !important;
 	background-image: none !important;
