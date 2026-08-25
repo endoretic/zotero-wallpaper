@@ -3,6 +3,7 @@ var ZoteroWallpaper = {
 	IMAGE_RE: /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i,
 	currentPath: "",
 	timer: null,
+	resizeObservers: new WeakMap(),
 
 	async startup() {
 		this.pickRandom();
@@ -101,7 +102,8 @@ var ZoteroWallpaper = {
 	attach(win) {
 		let doc = win.document;
 		let pane = doc.getElementById("zotero-pane");
-		if (!pane || doc.getElementById("zotero-wallpaper-layer")) return;
+		let itemsPane = doc.getElementById("zotero-items-pane");
+		if (!pane || !itemsPane || doc.getElementById("zotero-wallpaper-layer")) return;
 
 		let layer = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
 		layer.id = "zotero-wallpaper-layer";
@@ -111,12 +113,29 @@ var ZoteroWallpaper = {
 		style.id = "zotero-wallpaper-style";
 		style.textContent = this.css;
 		doc.documentElement.append(style);
+
+		let observer = new win.ResizeObserver(() => this.alignItemPane(win));
+		observer.observe(pane);
+		observer.observe(itemsPane);
+		this.resizeObservers.set(win, observer);
+		this.alignItemPane(win);
 		this.applyToWindow(win);
 	},
 
 	detach(win) {
+		this.resizeObservers.get(win)?.disconnect();
+		this.resizeObservers.delete(win);
+		win.document.getElementById("zotero-pane")?.style.removeProperty("--zw-toolbar-height");
 		win.document.getElementById("zotero-wallpaper-layer")?.remove();
 		win.document.getElementById("zotero-wallpaper-style")?.remove();
+	},
+
+	alignItemPane(win) {
+		let pane = win.document.getElementById("zotero-pane");
+		let itemsPane = win.document.getElementById("zotero-items-pane");
+		if (!pane || !itemsPane) return;
+		let height = Math.max(0, Math.round(itemsPane.getBoundingClientRect().top - pane.getBoundingClientRect().top));
+		pane.style.setProperty("--zw-toolbar-height", `${height}px`);
 	},
 
 	apply() {
@@ -226,8 +245,8 @@ var ZoteroWallpaper = {
 }
 #zotero-pane #zotero-item-pane {
 	box-sizing: border-box;
-	padding-top: 41px;
-	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 41px, transparent 41px) !important;
+	padding-top: var(--zw-toolbar-height, 41px);
+	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 var(--zw-toolbar-height, 41px), transparent var(--zw-toolbar-height, 41px)) !important;
 }
 #zotero-pane .zotero-toolbar {
 	background-color: rgba(248, 248, 250, .78) !important;
@@ -235,7 +254,7 @@ var ZoteroWallpaper = {
 }
 @media (prefers-color-scheme: dark) {
 	#zotero-pane #zotero-item-pane {
-		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 41px, transparent 41px) !important;
+		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 var(--zw-toolbar-height, 41px), transparent var(--zw-toolbar-height, 41px)) !important;
 	}
 	#zotero-pane .zotero-toolbar {
 		background-color: rgba(36, 36, 39, .78) !important;
