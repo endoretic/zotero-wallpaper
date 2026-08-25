@@ -224,11 +224,19 @@ var ZoteroWallpaper = {
 #zotero-pane .virtualized-table .row:not(.selected):not(:hover) .cell {
 	background-color: transparent !important;
 }
+#zotero-pane #zotero-item-pane {
+	box-sizing: border-box;
+	padding-top: 41px;
+	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 41px, transparent 41px) !important;
+}
 #zotero-pane .zotero-toolbar {
 	background-color: rgba(248, 248, 250, .78) !important;
 	backdrop-filter: blur(10px);
 }
 @media (prefers-color-scheme: dark) {
+	#zotero-pane #zotero-item-pane {
+		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 41px, transparent 41px) !important;
+	}
 	#zotero-pane .zotero-toolbar {
 		background-color: rgba(36, 36, 39, .78) !important;
 	}
