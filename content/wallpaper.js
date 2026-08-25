@@ -25,6 +25,10 @@ var ZoteroWallpaper = {
 		Zotero.Prefs.set(this.PREF + name, value, true);
 	},
 
+	text(english, chinese) {
+		return this.get("language", "en") === "zh-CN" ? chinese : english;
+	},
+
 	getImages() {
 		let source = this.get("source", "single");
 		let path = this.get(source === "folder" ? "folderPath" : "singlePath", "");
@@ -184,8 +188,8 @@ var ZoteroWallpaper = {
 	async chooseSingle(parentWindow) {
 		let { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
 		let picker = new FilePicker();
-		picker.init(parentWindow, "选择一张壁纸", picker.modeOpen);
-		picker.appendFilter("图片", "*.avif; *.bmp; *.gif; *.jpg; *.jpeg; *.png; *.webp");
+		picker.init(parentWindow, this.text("Choose a wallpaper", "选择一张壁纸"), picker.modeOpen);
+		picker.appendFilter(this.text("Images", "图片"), "*.avif; *.bmp; *.gif; *.jpg; *.jpeg; *.png; *.webp");
 		if (await picker.show() !== picker.returnOK) return null;
 		this.set("source", "single");
 		this.set("singlePath", picker.file);
@@ -195,7 +199,7 @@ var ZoteroWallpaper = {
 	async chooseFolder(parentWindow) {
 		let { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
 		let picker = new FilePicker();
-		picker.init(parentWindow, "选择壁纸文件夹", picker.modeGetFolder);
+		picker.init(parentWindow, this.text("Choose a wallpaper folder", "选择壁纸文件夹"), picker.modeGetFolder);
 		if (await picker.show() !== picker.returnOK) return null;
 		this.set("source", "folder");
 		this.set("folderPath", picker.file);

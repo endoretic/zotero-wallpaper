@@ -5,10 +5,12 @@
 }
 
 #zotero-wallpaper-prefs groupbox {
-	padding-block: 4px 16px;
+	margin-block: 0 6px;
+	padding-block: 0 6px;
 }
 
 #zotero-wallpaper-prefs h2 {
+	margin-block: 0 6px;
 	font-size: 1.16rem;
 	letter-spacing: .01em;
 }
