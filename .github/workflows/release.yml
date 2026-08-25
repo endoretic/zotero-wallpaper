@@ -1,0 +1,109 @@
+name: CI and Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run static checks
+        shell: pwsh
+        run: ./scripts/check.ps1
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read version
+        id: meta
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content -LiteralPath manifest.json -Raw | ConvertFrom-Json
+          $version = [string]$manifest.version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "manifest.json contains an invalid version: $version"
+          }
+
+          $tag = "v$version"
+          $published = gh release list --repo '${{ github.repository }}' --limit 1000 --json tagName | ConvertFrom-Json
+          $needed = $tag -notin @($published.tagName)
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "needed=$($needed.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Build release assets
+        if: steps.meta.outputs.needed == 'true'
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -LiteralPath manifest.json -Raw | ConvertFrom-Json
+          $version = '${{ steps.meta.outputs.version }}'
+          $tag = '${{ steps.meta.outputs.tag }}'
+          $stage = Join-Path $env:RUNNER_TEMP 'zotero-wallpaper'
+          $dist = Join-Path $PWD 'dist'
+
+          New-Item -ItemType Directory -Path $stage, $dist -Force | Out-Null
+          Copy-Item -LiteralPath manifest.json, bootstrap.js, prefs.js, icon.png -Destination $stage
+          Copy-Item -LiteralPath content -Destination $stage -Recurse
+
+          $xpiName = "zotero-wallpaper-$version.xpi"
+          $xpiPath = Join-Path $dist $xpiName
+          $zipPath = Join-Path $dist "zotero-wallpaper-$version.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath
+          Move-Item -LiteralPath $zipPath -Destination $xpiPath
+          $hash = (Get-FileHash -LiteralPath $xpiPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $addonID = [string]$manifest.applications.zotero.id
+          $addon = @{
+            updates = @(
+              @{
+                version = $version
+                update_link = "https://github.com/${{ github.repository }}/releases/download/$tag/$xpiName"
+                update_hash = "sha256:$hash"
+                applications = @{
+                  zotero = @{
+                    strict_min_version = [string]$manifest.applications.zotero.strict_min_version
+                    strict_max_version = [string]$manifest.applications.zotero.strict_max_version
+                  }
+                }
+              }
+            )
+          }
+          $addons = @{}
+          $addons[$addonID] = $addon
+          @{ addons = $addons } |
+            ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $dist 'updates.json') -Encoding utf8NoBOM
+
+      - name: Create GitHub Release
+        if: steps.meta.outputs.needed == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create '${{ steps.meta.outputs.tag }}' `
+            'dist/zotero-wallpaper-${{ steps.meta.outputs.version }}.xpi' `
+            'dist/updates.json' `
+            --repo '${{ github.repository }}' `
+            --target '${{ github.sha }}' `
+            --title 'Zotero Wallpaper ${{ steps.meta.outputs.version }}' `
+            --generate-notes
