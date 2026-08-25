@@ -1,0 +1,137 @@
+#zotero-wallpaper-prefs {
+	--zw-accent: #4d6f91;
+	--zw-line: color-mix(in srgb, currentColor 16%, transparent);
+	max-width: 760px;
+}
+
+#zotero-wallpaper-prefs groupbox {
+	padding-block: 4px 16px;
+}
+
+#zotero-wallpaper-prefs h2 {
+	font-size: 1.16rem;
+	letter-spacing: .01em;
+}
+
+#zotero-wallpaper-prefs p {
+	margin: 4px 0 0;
+	color: color-mix(in srgb, currentColor 68%, transparent);
+}
+
+.zw-pref-enable-row,
+.zw-pref-source-actions,
+.zw-pref-field {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.zw-pref-enable-row {
+	justify-content: space-between;
+}
+
+.zw-pref-enable-row input {
+	width: 18px;
+	height: 18px;
+}
+
+.zw-pref-source-actions {
+	flex-wrap: wrap;
+	margin-bottom: 12px;
+}
+
+.zw-pref-source-actions button {
+	padding: 5px 12px;
+}
+
+.zw-pref-source-actions button:first-child,
+.zw-pref-source-actions button:nth-child(2) {
+	border-color: var(--zw-accent);
+}
+
+.zw-pref-path-card {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 5px 10px;
+	padding: 12px;
+	border: 1px solid var(--zw-line);
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--zw-accent) 7%, transparent);
+}
+
+#zw-pref-source-badge {
+	grid-row: 1 / 3;
+	align-self: center;
+	padding: 4px 8px;
+	border-radius: 99px;
+	background: var(--zw-accent);
+	color: white;
+	font-size: .82rem;
+}
+
+#zw-pref-path {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: color-mix(in srgb, currentColor 62%, transparent);
+}
+
+.zw-pref-field {
+	justify-content: space-between;
+	margin-block: 8px;
+}
+
+.zw-pref-field input[type="range"] {
+	flex: 1;
+	max-width: 430px;
+}
+
+.zw-pref-field output {
+	display: inline-block;
+	min-width: 3.2em;
+	color: var(--zw-accent);
+}
+
+.zw-pref-fit {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	margin: 12px 0 0;
+	padding: 0;
+	border: 0;
+}
+
+.zw-pref-fit legend {
+	margin-bottom: 8px;
+}
+
+.zw-pref-fit label {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 2px 7px;
+	padding: 10px;
+	border: 1px solid var(--zw-line);
+	border-radius: 6px;
+}
+
+.zw-pref-fit label:has(input:checked) {
+	border-color: var(--zw-accent);
+	background: color-mix(in srgb, var(--zw-accent) 8%, transparent);
+}
+
+.zw-pref-fit small {
+	grid-column: 2;
+	color: color-mix(in srgb, currentColor 62%, transparent);
+}
+
+.zw-pref-hint {
+	font-size: .9rem;
+}
+
+@media (max-width: 620px) {
+	.zw-pref-fit { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#zotero-wallpaper-prefs * { scroll-behavior: auto !important; }
+}

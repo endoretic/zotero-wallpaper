@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "Zotero Wallpaper",
+  "version": "0.1.0",
+  "description": "为 Zotero 10 的主要显示区域设置可随机切换的本地壁纸。",
+  "author": "EndoReticulum",
+  "homepage_url": "https://github.com/endoretic/zotero-wallpaper",
+  "icons": {
+    "48": "icon.png",
+    "96": "icon.png"
+  },
+  "applications": {
+    "zotero": {
+      "id": "zotero-wallpaper@endoretic.github.io",
+      "update_url": "https://github.com/endoretic/zotero-wallpaper/releases/latest/download/updates.json",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*"
+    }
+  }
+}

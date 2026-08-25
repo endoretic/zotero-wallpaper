@@ -1,0 +1,55 @@
+<vbox id="zotero-wallpaper-prefs" xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul" xmlns:html="http://www.w3.org/1999/xhtml" onload="ZoteroWallpaper_Preferences.init()">
+	<groupbox>
+		<label><html:h2>壁纸</html:h2></label>
+		<html:div class="zw-pref-enable-row">
+			<html:div>
+				<html:strong>启用背景壁纸</html:strong>
+				<html:p>覆盖文献库的分类、条目列表和条目详情区域。</html:p>
+			</html:div>
+			<html:input id="zw-pref-enabled" type="checkbox" aria-label="启用背景壁纸"/>
+		</html:div>
+	</groupbox>
+
+	<groupbox>
+		<label><html:h2>图片来源</html:h2></label>
+		<html:div class="zw-pref-source-actions">
+			<html:button id="zw-pref-pick-single" type="button">选择单张图片</html:button>
+			<html:button id="zw-pref-pick-folder" type="button">选择壁纸文件夹</html:button>
+			<html:button id="zw-pref-next" type="button">随机换一张</html:button>
+		</html:div>
+		<html:div class="zw-pref-path-card">
+			<html:span id="zw-pref-source-badge">尚未选择</html:span>
+			<html:strong id="zw-pref-current">未加载壁纸</html:strong>
+			<html:span id="zw-pref-path"></html:span>
+		</html:div>
+	</groupbox>
+
+	<groupbox>
+		<label><html:h2>显示方式</html:h2></label>
+		<html:div class="zw-pref-field">
+			<html:label for="zw-pref-opacity">透明度 <html:output id="zw-pref-opacity-value">30%</html:output></html:label>
+			<html:input id="zw-pref-opacity" type="range" min="0" max="100" step="1"/>
+		</html:div>
+		<html:fieldset class="zw-pref-fit">
+			<html:legend>对齐方式</html:legend>
+			<html:label><html:input type="radio" name="zw-pref-fit" value="cover"/>覆盖<html:small>铺满区域，可能裁切</html:small></html:label>
+			<html:label><html:input type="radio" name="zw-pref-fit" value="contain"/>填充<html:small>完整显示，可能留边</html:small></html:label>
+			<html:label><html:input type="radio" name="zw-pref-fit" value="center"/>居中<html:small>保持图片原始大小</html:small></html:label>
+			<html:label><html:input type="radio" name="zw-pref-fit" value="stretch"/>拉伸<html:small>强制匹配整个区域</html:small></html:label>
+		</html:fieldset>
+	</groupbox>
+
+	<groupbox>
+		<label><html:h2>随机切换</html:h2></label>
+		<html:label class="zw-pref-field" for="zw-pref-interval">切换间隔
+			<html:select id="zw-pref-interval">
+				<html:option value="0">仅在每次启动时随机</html:option>
+				<html:option value="5">每 5 分钟</html:option>
+				<html:option value="10">每 10 分钟</html:option>
+				<html:option value="15">每 15 分钟</html:option>
+				<html:option value="30">每 30 分钟</html:option>
+			</html:select>
+		</html:label>
+		<html:p class="zw-pref-hint">文件夹模式下，每次启动都会随机选择一张；定时切换会尽量避免连续显示同一张。</html:p>
+	</groupbox>
+</vbox>
