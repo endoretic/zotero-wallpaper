@@ -2,3 +2,5 @@
 wallpapers/
 build/
 .tmp/
+AGENTS.md
+.agents/

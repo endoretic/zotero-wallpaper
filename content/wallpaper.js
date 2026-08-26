@@ -6,7 +6,6 @@ var ZoteroWallpaper = {
 	readerStates: new Map(),
 	readerHandler: null,
 	pluginID: "zotero-wallpaper@endoretic.github.io",
-	readerImageCache: { path: "", uri: "" },
 
 	async startup(pluginID = this.pluginID) {
 		this.pluginID = pluginID;
@@ -22,7 +21,6 @@ var ZoteroWallpaper = {
 		this.stopTimer();
 		this.unregisterReaderIntegration();
 		for (let reader of this.getReaders()) this.cleanupReader(reader);
-		this.readerImageCache = { path: "", uri: "" };
 		for (let win of Zotero.getMainWindows()) this.detach(win);
 	},
 
@@ -106,17 +104,15 @@ var ZoteroWallpaper = {
 
 	next() {
 		this.pickRandom();
-		this.apply();
-		return this.status();
+		this.apply({ readers: false });
 	},
 
-	refresh({ repick = false } = {}) {
-		if (repick || !this.isFile(this.currentPath) || !this.getImages().includes(this.currentPath)) {
+	refresh({ repick = false, readers = true, timer = true } = {}) {
+		if (repick || !this.isFile(this.currentPath)) {
 			this.pickRandom();
 		}
-		this.apply();
-		this.resetTimer();
-		return this.status();
+		this.apply({ readers });
+		if (timer) this.resetTimer();
 	},
 
 	status() {
@@ -130,12 +126,12 @@ var ZoteroWallpaper = {
 
 	attach(win) {
 		let doc = win.document;
-		let pane = doc.getElementById("zotero-pane");
-		if (!pane || doc.getElementById("zotero-wallpaper-layer")) return;
+		let paneStack = doc.getElementById("zotero-pane-stack");
+		if (!paneStack || doc.getElementById("zotero-wallpaper-layer")) return false;
 
 		let layer = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
 		layer.id = "zotero-wallpaper-layer";
-		pane.prepend(layer);
+		paneStack.prepend(layer);
 
 		let style = doc.createElementNS("http://www.w3.org/1999/xhtml", "style");
 		style.id = "zotero-wallpaper-style";
@@ -143,6 +139,7 @@ var ZoteroWallpaper = {
 		doc.documentElement.append(style);
 
 		this.applyToWindow(win);
+		return true;
 	},
 
 	detach(win) {
@@ -151,12 +148,11 @@ var ZoteroWallpaper = {
 		win.document.getElementById("zotero-wallpaper-context-style")?.remove();
 	},
 
-	apply() {
+	apply({ readers = true } = {}) {
 		for (let win of Zotero.getMainWindows()) {
-			this.attach(win);
-			this.applyToWindow(win);
+			if (!this.attach(win)) this.applyToWindow(win);
 		}
-		this.refreshReaders();
+		if (readers) this.refreshReaders();
 	},
 
 	applyToWindow(win) {
@@ -182,8 +178,8 @@ var ZoteroWallpaper = {
 		layer.style.backgroundSize = layout[0];
 		layer.style.backgroundPosition = layout[1];
 		layer.style.backgroundRepeat = layout[2];
-		layer.style.opacity = this.getWallpaperOpacity();
-		this.setDocumentStyle(win.document, "zotero-wallpaper-context-style", this.buildContextPaneCSS(uri));
+		layer.style.opacity = 1;
+		this.setDocumentStyle(win.document, "zotero-wallpaper-context-style", this.buildContextPaneCSS());
 	},
 
 	getWallpaperOpacity() {
@@ -192,6 +188,10 @@ var ZoteroWallpaper = {
 
 	getSurfaceOpacity() {
 		return Number((1 - this.getWallpaperOpacity()).toFixed(3));
+	},
+
+	getToolbarOpacity() {
+		return Number((1 - this.getWallpaperOpacity() / 2).toFixed(3));
 	},
 
 	registerReaderIntegration() {
@@ -238,7 +238,12 @@ var ZoteroWallpaper = {
 	},
 
 	refreshReaders() {
-		for (let reader of this.getReaders()) {
+		let readers = this.getReaders();
+		let active = new Set(readers);
+		for (let reader of this.readerStates.keys()) {
+			if (!active.has(reader)) this.cleanupReader(reader);
+		}
+		for (let reader of readers) {
 			void this.applyToReader(reader).catch(error => this.reportError("Reader refresh failed", error));
 		}
 	},
@@ -255,6 +260,8 @@ var ZoteroWallpaper = {
 		}
 		if (!state) {
 			state = { outerWindow, observer: null, frames: new Map() };
+			state.unloadHandler = () => this.readerStates.get(reader) === state && this.cleanupReader(reader);
+			outerWindow.addEventListener("unload", state.unloadHandler, { once: true });
 			this.readerStates.set(reader, state);
 		}
 
@@ -264,16 +271,9 @@ var ZoteroWallpaper = {
 			return;
 		}
 
-		let uri = await this.getReaderImageURI();
-		if (!uri) {
-			this.cleanupReader(reader);
-			return;
-		}
-		state.imageURI = uri;
-		this.setDocumentStyle(outerWindow.document, "zotero-wallpaper-reader-style", this.buildReaderCSS(uri));
-		this.scanReaderFrames(reader, state, uri);
+		let changed = this.setDocumentStyle(outerWindow.document, "zotero-wallpaper-reader-style", this.buildReaderCSS());
+		if (!state.observer || changed) this.scanReaderFrames(reader, state, changed);
 		this.ensureReaderObserver(reader, state);
-		this.debug("Reader shell style applied");
 	},
 
 	async waitForReaderWindow(reader) {
@@ -292,14 +292,13 @@ var ZoteroWallpaper = {
 		if (state.observer || !state.outerWindow.MutationObserver) return;
 		let splitView = state.outerWindow.document.getElementById("split-view") || state.outerWindow.document.querySelector(".split-view");
 		if (!splitView) return;
-		state.observer = new state.outerWindow.MutationObserver(() => this.scanReaderFrames(reader, state, state.imageURI));
+		state.observer = new state.outerWindow.MutationObserver(() => this.scanReaderFrames(reader, state));
 		state.observer.observe(splitView, { childList: true, subtree: true });
 	},
 
-	scanReaderFrames(reader, state, uri) {
+	scanReaderFrames(reader, state, refresh = false) {
 		let document = state.outerWindow.document;
 		let frames = new Set(document.querySelectorAll("#split-view iframe, .split-view iframe"));
-		this.debug(`Reader frames found: ${frames.size}`);
 		for (let [frame, frameState] of Array.from(state.frames.entries())) {
 			if (frames.has(frame) && frame.isConnected) continue;
 			this.cleanupReaderFrame(frame, frameState);
@@ -307,59 +306,33 @@ var ZoteroWallpaper = {
 		}
 		for (let frame of frames) {
 			let frameState = state.frames.get(frame);
+			let isNew = !frameState;
 			if (!frameState) {
-				frameState = { loadHandler: () => this.applyReaderFrame(frame, state.imageURI) };
+				frameState = { loadHandler: () => this.applyReaderFrame(frame) };
 				frame.addEventListener("load", frameState.loadHandler);
 				state.frames.set(frame, frameState);
 			}
-			this.applyReaderFrame(frame, uri);
+			if (isNew || refresh) this.applyReaderFrame(frame);
 		}
 	},
 
-	applyReaderFrame(frame, uri) {
+	applyReaderFrame(frame) {
 		let document = frame.contentDocument;
 		if (!document?.documentElement || !document.querySelector("#viewerContainer, .pdfViewer")) return;
-		this.setDocumentStyle(document, "zotero-wallpaper-pdf-style", this.buildPDFCSS(uri));
-		this.debug("PDF frame style applied");
-	},
-
-	async getReaderImageURI() {
-		let path = this.currentPath;
-		if (!this.isFile(path)) return "";
-		if (this.readerImageCache.path === path && this.readerImageCache.uri) return this.readerImageCache.uri;
-
-		try {
-			let extension = path.split(".").pop().toLowerCase();
-			let mime = {
-				avif: "image/avif",
-				bmp: "image/bmp",
-				gif: "image/gif",
-				jpeg: "image/jpeg",
-				jpg: "image/jpeg",
-				png: "image/png",
-				webp: "image/webp",
-			}[extension] || "application/octet-stream";
-			let uri = await Zotero.File.generateDataURI(path, mime);
-			this.readerImageCache = { path, uri };
-			this.debug("Reader image converted to data URL");
-			return uri;
-		}
-		catch (error) {
-			this.reportError("Reader image conversion failed", error);
-			this.debug("Reader image conversion failed");
-			return "";
-		}
+		this.setDocumentStyle(document, "zotero-wallpaper-pdf-style", this.buildPDFCSS());
 	},
 
 	setDocumentStyle(document, id, css) {
-		if (!document?.documentElement) return;
+		if (!document?.documentElement) return false;
 		let style = document.getElementById(id);
 		if (!style) {
 			style = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
 			style.id = id;
 			document.documentElement.append(style);
 		}
+		if (style.textContent === css) return false;
 		style.textContent = css;
+		return true;
 	},
 
 	cleanupReaderFrame(frame, frameState) {
@@ -370,16 +343,25 @@ var ZoteroWallpaper = {
 	cleanupReader(reader) {
 		let state = this.readerStates.get(reader);
 		state?.observer?.disconnect();
+		state?.outerWindow?.removeEventListener("unload", state.unloadHandler);
 		for (let [frame, frameState] of state?.frames || []) this.cleanupReaderFrame(frame, frameState);
 		let document = state?.outerWindow?.document || reader?._iframeWindow?.document;
 		document?.getElementById("zotero-wallpaper-reader-style")?.remove();
 		this.readerStates.delete(reader);
 	},
 
-	buildReaderCSS(uri) {
-		let image = JSON.stringify(uri);
+	buildReaderCSS() {
 		let surfaceOpacity = this.getSurfaceOpacity();
+		let toolbarOpacity = this.getToolbarOpacity();
 		return `
+	:root {
+	--zw-surface: rgba(255, 255, 255, ${surfaceOpacity});
+	--zw-toolbar: rgba(249, 249, 249, ${toolbarOpacity});
+	--zw-sheen: rgba(255, 255, 255, .08);
+	--material-background: var(--zw-surface);
+	--material-sidepane: var(--zw-surface);
+	--material-toolbar: var(--zw-toolbar);
+}
 html,
 body,
 #reader-ui,
@@ -389,21 +371,19 @@ body,
 .secondary-view {
 	background-color: transparent !important;
 }
-body {
-	background-image: url(${image}) !important;
-	background-position: center center !important;
-	background-repeat: no-repeat !important;
-	background-size: cover !important;
-	background-attachment: fixed !important;
+#split-view iframe,
+.split-view iframe {
+	background: transparent !important;
 }
 .toolbar,
 #reader-ui .toolbar {
-	background-color: rgba(249, 249, 249, .94) !important;
+	background-color: var(--zw-toolbar) !important;
+	background-image: linear-gradient(125deg, var(--zw-sheen), transparent 36%) !important;
 	backdrop-filter: blur(4px);
 }
 #sidebarContainer {
-	background-color: rgba(242, 242, 242, ${surfaceOpacity}) !important;
-	backdrop-filter: blur(4px);
+	background-color: var(--zw-surface) !important;
+	background-image: linear-gradient(125deg, var(--zw-sheen), transparent 36%) !important;
 }
 #sidebarContent,
 #thumbnailsView,
@@ -412,37 +392,49 @@ body {
 	background-color: transparent !important;
 	background-image: none !important;
 }
-:root[data-color-scheme="dark"] .toolbar,
-:root[data-color-scheme="dark"] #reader-ui .toolbar {
-	background-color: rgba(39, 39, 39, .94) !important;
-}
-:root[data-color-scheme="dark"] #sidebarContainer {
-	background-color: rgba(48, 48, 48, ${surfaceOpacity}) !important;
+:root[data-color-scheme="dark"] {
+	--zw-surface: rgba(30, 30, 30, ${surfaceOpacity});
+	--zw-toolbar: rgba(39, 39, 39, ${toolbarOpacity});
+	--zw-sheen: rgba(255, 255, 255, .025);
 }
 @media (prefers-color-scheme: dark) {
-	:root:not([data-color-scheme="light"]) .toolbar,
-	:root:not([data-color-scheme="light"]) #reader-ui .toolbar {
-		background-color: rgba(39, 39, 39, .94) !important;
-	}
-	:root:not([data-color-scheme="light"]) #sidebarContainer {
-		background-color: rgba(48, 48, 48, ${surfaceOpacity}) !important;
+	:root:not([data-color-scheme="light"]) {
+		--zw-surface: rgba(30, 30, 30, ${surfaceOpacity});
+		--zw-toolbar: rgba(39, 39, 39, ${toolbarOpacity});
+		--zw-sheen: rgba(255, 255, 255, .025);
 	}
 }
 `;
 	},
 
-	buildContextPaneCSS(uri) {
-		let image = JSON.stringify(uri);
+	buildContextPaneCSS() {
 		let surfaceOpacity = this.getSurfaceOpacity();
+		let toolbarOpacity = this.getToolbarOpacity();
 		return `
+	:root {
+	--zw-surface: rgba(255, 255, 255, ${surfaceOpacity});
+	--zw-center-surface: rgba(232, 232, 232, ${surfaceOpacity});
+	--zw-toolbar: rgba(249, 249, 249, ${toolbarOpacity});
+	--zw-sheen: rgba(255, 255, 255, .08);
+	--material-background: var(--zw-surface);
+	--material-sidepane: var(--zw-surface);
+	--material-toolbar: var(--zw-toolbar);
+}
+#zotero-pane #zotero-collections-pane {
+	background-color: transparent !important;
+	background-image: linear-gradient(to bottom, transparent 0 41.5px, var(--zw-surface) 41.5px) !important;
+}
+#zotero-pane #zotero-items-pane-container {
+	background: transparent !important;
+}
+#zotero-pane #zotero-items-pane {
+	background-color: var(--zw-center-surface) !important;
+	background-image: none !important;
+}
+#zotero-pane #zotero-item-pane,
 #zotero-context-pane-inner {
 	background-color: transparent !important;
-	background-image: linear-gradient(to bottom, rgba(249, 249, 249, .94) 0 41px, var(--color-panedivider, #dadada) 41px 41.5px, rgba(242, 242, 242, ${surfaceOpacity}) 41.5px), url(${image}) !important;
-	background-position: center center, center center !important;
-	background-repeat: no-repeat, no-repeat !important;
-	background-size: auto, cover !important;
-	background-attachment: scroll, fixed !important;
-	backdrop-filter: blur(4px);
+	background-image: linear-gradient(125deg, var(--zw-sheen), transparent 36%), linear-gradient(to bottom, var(--zw-toolbar) 0 41px, var(--color-panedivider, #dadada) 41px 41.5px, var(--zw-surface) 41.5px) !important;
 }
 #zotero-context-pane-deck,
 #zotero-context-pane-item-deck,
@@ -457,29 +449,38 @@ body {
 	background-color: transparent !important;
 	background-image: none !important;
 }
+#zotero-context-pane,
+#zotero-context-pane > vbox,
+#zotero-context-pane .stacked-context-placeholder {
+	background: transparent !important;
+}
 #zotero-context-pane-item-deck {
 	box-sizing: border-box;
 	padding-top: 41.5px;
 }
 #zotero-context-pane-sidenav {
-	background-color: rgba(249, 249, 249, .94) !important;
+	--material-sidepane: transparent;
+	background-color: var(--zw-toolbar) !important;
+	background-image: linear-gradient(125deg, var(--zw-sheen), transparent 36%) !important;
 	backdrop-filter: blur(4px);
 }
 @media (prefers-color-scheme: dark) {
-	#zotero-context-pane-inner {
-		background-image: linear-gradient(to bottom, rgba(39, 39, 39, .94) 0 41px, var(--color-panedivider, #404040) 41px 41.5px, rgba(48, 48, 48, ${surfaceOpacity}) 41.5px), url(${image}) !important;
-	}
-	#zotero-context-pane-sidenav {
-		background-color: rgba(39, 39, 39, .94) !important;
+	:root {
+		--zw-surface: rgba(30, 30, 30, ${surfaceOpacity});
+		--zw-center-surface: rgba(52, 52, 52, ${surfaceOpacity});
+		--zw-toolbar: rgba(39, 39, 39, ${toolbarOpacity});
+		--zw-sheen: rgba(255, 255, 255, .025);
 	}
 }
 `;
 	},
 
-	buildPDFCSS(uri) {
-		let image = JSON.stringify(uri);
+	buildPDFCSS() {
 		let surfaceOpacity = this.getSurfaceOpacity();
 		return `
+	:root {
+	--zw-stage: rgba(245, 245, 245, ${surfaceOpacity});
+}
 html,
 body,
 #outerContainer,
@@ -488,19 +489,14 @@ body,
 	background-color: transparent !important;
 }
 #viewerContainer {
-	background-color: transparent !important;
-	background-image: linear-gradient(rgba(245, 245, 245, ${surfaceOpacity}), rgba(245, 245, 245, ${surfaceOpacity})), url(${image}) !important;
-	background-position: center center, center center !important;
-	background-repeat: no-repeat, no-repeat !important;
-	background-size: auto, cover !important;
-	background-attachment: scroll, fixed !important;
+	background: var(--zw-stage) !important;
 }
-:root[data-color-scheme="dark"] #viewerContainer {
-	background-image: linear-gradient(rgba(30, 30, 30, ${surfaceOpacity}), rgba(30, 30, 30, ${surfaceOpacity})), url(${image}) !important;
+:root[data-color-scheme="dark"] {
+	--zw-stage: rgba(30, 30, 30, ${surfaceOpacity});
 }
 @media (prefers-color-scheme: dark) {
-	:root:not([data-color-scheme="light"]) #viewerContainer {
-		background-image: linear-gradient(rgba(30, 30, 30, ${surfaceOpacity}), rgba(30, 30, 30, ${surfaceOpacity})), url(${image}) !important;
+	:root:not([data-color-scheme="light"]) {
+		--zw-stage: rgba(30, 30, 30, ${surfaceOpacity});
 	}
 }
 `;
@@ -527,7 +523,8 @@ body,
 		if (await picker.show() !== picker.returnOK) return null;
 		this.set("source", "single");
 		this.set("singlePath", picker.file);
-		return this.refresh({ repick: true });
+		this.refresh({ repick: true });
+		return true;
 	},
 
 	async chooseFolder(parentWindow) {
@@ -537,11 +534,12 @@ body,
 		if (await picker.show() !== picker.returnOK) return null;
 		this.set("source", "folder");
 		this.set("folderPath", picker.file);
-		return this.refresh({ repick: true });
+		this.refresh({ repick: true });
+		return true;
 	},
 
 	css: `
-#zotero-pane {
+#zotero-pane-stack {
 	position: relative !important;
 	isolation: isolate;
 }
@@ -550,11 +548,16 @@ body,
 	inset: 0;
 	z-index: 0;
 	pointer-events: none;
-	background-color: var(--material-background, #fff);
 }
-#zotero-pane > :not(#zotero-wallpaper-layer) {
+#zotero-pane-stack > :not(#zotero-wallpaper-layer) {
 	position: relative;
 	z-index: 1;
+}
+#tabs-deck,
+#tabs-deck > browser,
+#tabs-deck > iframe,
+#zotero-pane {
+	background-color: transparent !important;
 }
 #zotero-pane #zotero-trees,
 #zotero-pane #zotero-layout-switcher,
@@ -584,22 +587,19 @@ body,
 }
 #zotero-pane #zotero-item-pane {
 	box-sizing: border-box;
-	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 41px, var(--color-panedivider, #dadada) 41px 41.5px, transparent 41.5px) !important;
 }
 #zotero-pane #zotero-item-pane-content {
 	box-sizing: border-box;
 	padding-top: 41.5px;
 }
 #zotero-pane .zotero-toolbar {
-	background-color: rgba(248, 248, 250, .78) !important;
-	backdrop-filter: blur(10px);
+	background-color: var(--zw-toolbar, rgba(249, 249, 249, .85)) !important;
+	background-image: linear-gradient(125deg, var(--zw-sheen, rgba(255, 255, 255, .08)), transparent 36%) !important;
+	backdrop-filter: blur(4px);
 }
 @media (prefers-color-scheme: dark) {
-	#zotero-pane #zotero-item-pane {
-		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 41px, var(--color-panedivider, #404040) 41px 41.5px, transparent 41.5px) !important;
-	}
 	#zotero-pane .zotero-toolbar {
-		background-color: rgba(36, 36, 39, .78) !important;
+		background-color: var(--zw-toolbar, rgba(39, 39, 39, .85)) !important;
 	}
 }
 `,
