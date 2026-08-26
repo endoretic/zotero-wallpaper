@@ -7,6 +7,8 @@ Wallpaper & UI optimization for Zotero 10.
   <img src="docs/images/night.png" alt="Night mode" width="49%">
 </p>
 
+> **Note:** Screenshots are shown with [Ethereal Style](https://github.com/MuiseDestiny/zotero-style) enabled.
+
 [中文](#中文) · [English](#english)
 
 ## English
