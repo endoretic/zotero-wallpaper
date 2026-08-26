@@ -1,6 +1,6 @@
 # Zotero Wallpaper
 
-A local wallpaper plugin for Zotero 10.
+Wallpaper & UI optimization for Zotero 10.
 
 <p align="center">
   <img src="docs/images/light.png" alt="Light mode" width="49%">
@@ -11,7 +11,7 @@ A local wallpaper plugin for Zotero 10.
 
 ## English
 
-Supports one image or a folder, random selection on startup, 5/10/15/30-minute rotation, opacity control, and Cover/Contain/Center/Stretch layouts.
+Supports one image or a folder, random selection on startup, 5/10/15/30-minute rotation, opacity control, Cover/Contain/Center/Stretch layouts, and single-image sizing and positioning.
 
 Download the XPI from [Releases](https://github.com/endoretic/zotero-wallpaper/releases), install it from `Tools → Plugins`, then configure it under `Edit → Settings → Zotero Wallpaper`.
 
@@ -31,7 +31,7 @@ Compatibility: May conflict with theme plugins.
 
 ## 中文
 
-支持单张图片或文件夹、启动时随机选择、5/10/15/30 分钟随机切换、透明度调节，以及覆盖/填充/居中/拉伸布局。
+支持单张图片或文件夹、启动时随机选择、5/10/15/30 分钟随机切换、透明度调节、覆盖/填充/居中/拉伸布局，以及单图大小与位置调整。
 
 从 [Releases](https://github.com/endoretic/zotero-wallpaper/releases) 下载 XPI，通过 `工具 → 插件` 安装，然后前往 `编辑 → 设置 → Zotero Wallpaper` 配置。
 
