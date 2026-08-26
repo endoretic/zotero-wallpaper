@@ -4,7 +4,7 @@ async function startup({ id, rootURI }) {
 	WallpaperScope = { Zotero, Services, ChromeUtils, Cc, Ci };
 	Services.scriptloader.loadSubScript(rootURI + "content/wallpaper.js", WallpaperScope);
 	Zotero.Wallpaper = WallpaperScope.ZoteroWallpaper;
-	await Zotero.Wallpaper.startup();
+	await Zotero.Wallpaper.startup(id);
 
 	await Zotero.PreferencePanes.register({
 		id: "zotero-wallpaper-prefpane",
