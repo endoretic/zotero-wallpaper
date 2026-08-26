@@ -36,10 +36,11 @@
 
 	<groupbox>
 		<label><html:h2 data-i18n="display">Display</html:h2></label>
-		<html:div class="zw-pref-field">
-			<html:label for="zw-pref-opacity"><html:span data-i18n="opacity">Opacity</html:span> <html:output id="zw-pref-opacity-value">30%</html:output></html:label>
+		<html:label class="zw-pref-slider" for="zw-pref-opacity">
+			<html:span data-i18n="opacity">Opacity</html:span>
 			<html:input id="zw-pref-opacity" type="range" min="0" max="100" step="1"/>
-		</html:div>
+			<html:output id="zw-pref-opacity-value">30%</html:output>
+		</html:label>
 		<html:fieldset class="zw-pref-fit">
 			<html:legend data-i18n="alignment">Alignment</html:legend>
 			<html:label><html:input type="radio" name="zw-pref-fit" value="cover"/><html:span data-i18n="cover">Cover</html:span><html:small data-i18n="coverHint">Fill the area and crop if needed</html:small></html:label>
@@ -47,6 +48,27 @@
 			<html:label><html:input type="radio" name="zw-pref-fit" value="center"/><html:span data-i18n="center">Center</html:span><html:small data-i18n="centerHint">Keep the original image size</html:small></html:label>
 			<html:label><html:input type="radio" name="zw-pref-fit" value="stretch"/><html:span data-i18n="stretch">Stretch</html:span><html:small data-i18n="stretchHint">Force the image to fit the area</html:small></html:label>
 		</html:fieldset>
+		<html:div id="zw-pref-single-adjustments" class="zw-pref-single-adjustments">
+			<html:div class="zw-pref-adjustment-header">
+				<html:div><html:strong data-i18n="singleAdjustments">Single image adjustments</html:strong><html:p data-i18n="singleAdjustmentsHint">Size and position refine the selected alignment. Use Contain to keep the full image visible.</html:p></html:div>
+				<html:button id="zw-pref-single-reset" type="button" data-i18n="reset">Reset</html:button>
+			</html:div>
+			<html:label class="zw-pref-slider" for="zw-pref-single-scale">
+				<html:span data-i18n="size">Size</html:span>
+				<html:input id="zw-pref-single-scale" type="range" min="50" max="200" step="1"/>
+				<html:output id="zw-pref-single-scale-value">100%</html:output>
+			</html:label>
+			<html:label class="zw-pref-slider" for="zw-pref-single-position-x">
+				<html:span data-i18n="horizontalPosition">Horizontal position</html:span>
+				<html:input id="zw-pref-single-position-x" type="range" min="0" max="100" step="1"/>
+				<html:output id="zw-pref-single-position-x-value">50%</html:output>
+			</html:label>
+			<html:label class="zw-pref-slider" for="zw-pref-single-position-y">
+				<html:span data-i18n="verticalPosition">Vertical position</html:span>
+				<html:input id="zw-pref-single-position-y" type="range" min="0" max="100" step="1"/>
+				<html:output id="zw-pref-single-position-y-value">50%</html:output>
+			</html:label>
+		</html:div>
 	</groupbox>
 
 	<groupbox>

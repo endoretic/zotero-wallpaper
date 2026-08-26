@@ -131,6 +131,9 @@ var ZoteroWallpaper = {
 
 		let layer = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
 		layer.id = "zotero-wallpaper-layer";
+		let image = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+		image.id = "zotero-wallpaper-image";
+		layer.append(image);
 		paneStack.prepend(layer);
 
 		let style = doc.createElementNS("http://www.w3.org/1999/xhtml", "style");
@@ -158,6 +161,12 @@ var ZoteroWallpaper = {
 	applyToWindow(win) {
 		let layer = win.document.getElementById("zotero-wallpaper-layer");
 		if (!layer) return;
+		let image = win.document.getElementById("zotero-wallpaper-image");
+		if (!image) {
+			image = win.document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+			image.id = "zotero-wallpaper-image";
+			layer.append(image);
+		}
 		let enabled = this.get("enabled", true) && this.isFile(this.currentPath);
 		layer.hidden = !enabled;
 		if (!enabled) {
@@ -174,12 +183,40 @@ var ZoteroWallpaper = {
 			stretch: ["100% 100%", "center", "no-repeat"],
 		}[fit] || ["cover", "center", "no-repeat"];
 
-		layer.style.backgroundImage = `url("${uri}")`;
-		layer.style.backgroundSize = layout[0];
-		layer.style.backgroundPosition = layout[1];
-		layer.style.backgroundRepeat = layout[2];
-		layer.style.opacity = 1;
+		image.style.backgroundImage = `url("${uri}")`;
+		image.style.backgroundSize = layout[0];
+		image.style.backgroundRepeat = layout[2];
+		if (this.get("source", "single") === "single") {
+			this.applySingleLayout(image);
+		}
+		else {
+			image.style.backgroundPosition = layout[1];
+			image.style.transform = "";
+			image.style.transformOrigin = "";
+		}
 		this.setDocumentStyle(win.document, "zotero-wallpaper-context-style", this.buildContextPaneCSS());
+	},
+
+	clamp(value, min, max, fallback) {
+		value = Number(value);
+		return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+	},
+
+	applySingleLayout(image, scale = this.get("singleScale", 100), x = this.get("singlePositionX", 50), y = this.get("singlePositionY", 50)) {
+		scale = this.clamp(scale, 50, 200, 100);
+		x = this.clamp(x, 0, 100, 50);
+		y = this.clamp(y, 0, 100, 50);
+		image.style.backgroundPosition = `${x}% ${y}%`;
+		image.style.transform = scale === 100 ? "" : `scale(${scale / 100})`;
+		image.style.transformOrigin = `${x}% ${y}%`;
+	},
+
+	previewSingleLayout(scale, x, y) {
+		if (this.get("source", "single") !== "single") return;
+		for (let win of Zotero.getMainWindows()) {
+			let image = win.document.getElementById("zotero-wallpaper-image");
+			if (image) this.applySingleLayout(image, scale, x, y);
+		}
 	},
 
 	getWallpaperOpacity() {
@@ -547,7 +584,12 @@ body,
 	position: absolute;
 	inset: 0;
 	z-index: 0;
+	overflow: hidden;
 	pointer-events: none;
+}
+#zotero-wallpaper-image {
+	position: absolute;
+	inset: 0;
 }
 #zotero-pane-stack > :not(#zotero-wallpaper-layer) {
 	position: relative;

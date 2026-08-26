@@ -12,15 +12,21 @@ window.ZoteroWallpaper_Preferences = {
 			next: "Choose another",
 			display: "Display",
 			opacity: "Opacity",
+			singleAdjustments: "Single image adjustments",
+			singleAdjustmentsHint: "Size and position refine the selected alignment.",
+			size: "Size",
+			horizontalPosition: "Horizontal position",
+			verticalPosition: "Vertical position",
+			reset: "Reset",
 			alignment: "Alignment",
 			cover: "Cover",
-			coverHint: "Fill the area and crop if needed",
+			coverHint: "Fill the area and crop",
 			contain: "Contain",
-			containHint: "Show the full image with possible gaps",
+			containHint: "Show the full image",
 			center: "Center",
-			centerHint: "Keep the original image size",
+			centerHint: "Keep original image size",
 			stretch: "Stretch",
-			stretchHint: "Force the image to fit the area",
+			stretchHint: "Force the image to fit",
 			rotation: "Random rotation",
 			interval: "Change interval",
 			startupOnly: "Randomize on startup only",
@@ -48,6 +54,12 @@ window.ZoteroWallpaper_Preferences = {
 			next: "随机换一张",
 			display: "显示方式",
 			opacity: "透明度",
+			singleAdjustments: "单图调整",
+			singleAdjustmentsHint: "尺寸和位置在所选的对齐方式上微调。",
+			size: "大小",
+			horizontalPosition: "水平位置",
+			verticalPosition: "垂直位置",
+			reset: "复位",
 			alignment: "对齐方式",
 			cover: "覆盖",
 			coverHint: "铺满区域，可能裁切",
@@ -92,11 +104,18 @@ window.ZoteroWallpaper_Preferences = {
 		this.enabled = document.getElementById("zw-pref-enabled");
 		this.opacity = document.getElementById("zw-pref-opacity");
 		this.opacityValue = document.getElementById("zw-pref-opacity-value");
+		this.singleAdjustments = document.getElementById("zw-pref-single-adjustments");
+		this.singleScale = document.getElementById("zw-pref-single-scale");
+		this.singlePositionX = document.getElementById("zw-pref-single-position-x");
+		this.singlePositionY = document.getElementById("zw-pref-single-position-y");
 		this.interval = document.getElementById("zw-pref-interval");
 
 		this.language.value = this.languageCode;
 		this.enabled.checked = this.api.get("enabled", true);
 		this.opacity.value = this.api.get("opacity", 30);
+		this.singleScale.value = this.api.get("singleScale", 100);
+		this.singlePositionX.value = this.api.get("singlePositionX", 50);
+		this.singlePositionY.value = this.api.get("singlePositionY", 50);
 		this.interval.value = String(this.api.get("interval", 0));
 		document.querySelector(`input[name="zw-pref-fit"][value="${this.api.get("fit", "cover")}"]`).checked = true;
 
@@ -115,6 +134,29 @@ window.ZoteroWallpaper_Preferences = {
 			});
 		});
 		this.interval.addEventListener("change", () => this.save("interval", Number(this.interval.value)));
+		for (let [control, pref] of [
+			[this.singleScale, "singleScale"],
+			[this.singlePositionX, "singlePositionX"],
+			[this.singlePositionY, "singlePositionY"],
+		]) {
+			control.addEventListener("input", () => {
+				this.updateSingleOutputs();
+				this.previewSingleLayout();
+			});
+			control.addEventListener("change", () => this.api.set(pref, Number(control.value)));
+		}
+		document.getElementById("zw-pref-single-reset").addEventListener("click", () => {
+			for (let [control, pref, value] of [
+				[this.singleScale, "singleScale", 100],
+				[this.singlePositionX, "singlePositionX", 50],
+				[this.singlePositionY, "singlePositionY", 50],
+			]) {
+				control.value = value;
+				this.api.set(pref, value);
+			}
+			this.updateSingleOutputs();
+			this.previewSingleLayout();
+		});
 		for (let radio of document.querySelectorAll('input[name="zw-pref-fit"]')) {
 			radio.addEventListener("change", () => radio.checked && this.save("fit", radio.value));
 		}
@@ -130,8 +172,27 @@ window.ZoteroWallpaper_Preferences = {
 		});
 
 		this.opacityValue.value = `${this.opacity.value}%`;
+		this.updateSingleOutputs();
 		this.applyLanguage();
 		this.render();
+	},
+
+	updateSingleOutputs() {
+		for (let name of ["singleScale", "singlePositionX", "singlePositionY"]) {
+			document.getElementById(`zw-pref-${name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}-value`).value = `${this[name].value}%`;
+		}
+	},
+
+	previewSingleLayout() {
+		if (this.singleLayoutFrame) return;
+		this.singleLayoutFrame = window.requestAnimationFrame(() => {
+			this.singleLayoutFrame = 0;
+			this.api.previewSingleLayout(
+				Number(this.singleScale.value),
+				Number(this.singlePositionX.value),
+				Number(this.singlePositionY.value),
+			);
+		});
 	},
 
 	applyLanguage() {
@@ -159,6 +220,7 @@ window.ZoteroWallpaper_Preferences = {
 
 	render() {
 		let source = this.api.get("source", "single");
+		this.singleAdjustments.hidden = source !== "single";
 		let status = this.api.status();
 		let path = this.api.get(source === "folder" ? "folderPath" : "singlePath", "");
 		let countLabel = this.languageCode === "zh-CN"
