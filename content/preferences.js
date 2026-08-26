@@ -91,6 +91,7 @@ window.ZoteroWallpaper_Preferences = {
 		this.language = document.getElementById("zw-pref-language");
 		this.enabled = document.getElementById("zw-pref-enabled");
 		this.opacity = document.getElementById("zw-pref-opacity");
+		this.opacityValue = document.getElementById("zw-pref-opacity-value");
 		this.interval = document.getElementById("zw-pref-interval");
 
 		this.language.value = this.languageCode;
@@ -106,8 +107,12 @@ window.ZoteroWallpaper_Preferences = {
 		});
 		this.enabled.addEventListener("change", () => this.save("enabled", this.enabled.checked));
 		this.opacity.addEventListener("input", () => {
-			document.getElementById("zw-pref-opacity-value").value = `${this.opacity.value}%`;
-			this.save("opacity", Number(this.opacity.value));
+			this.opacityValue.value = `${this.opacity.value}%`;
+			if (this.opacityFrame) return;
+			this.opacityFrame = window.requestAnimationFrame(() => {
+				this.opacityFrame = 0;
+				this.save("opacity", Number(this.opacity.value));
+			});
 		});
 		this.interval.addEventListener("change", () => this.save("interval", Number(this.interval.value)));
 		for (let radio of document.querySelectorAll('input[name="zw-pref-fit"]')) {
@@ -124,7 +129,7 @@ window.ZoteroWallpaper_Preferences = {
 			this.render();
 		});
 
-		document.getElementById("zw-pref-opacity-value").value = `${this.opacity.value}%`;
+		this.opacityValue.value = `${this.opacity.value}%`;
 		this.applyLanguage();
 		this.render();
 	},
@@ -141,8 +146,15 @@ window.ZoteroWallpaper_Preferences = {
 
 	save(name, value) {
 		this.api.set(name, value);
-		this.api.refresh({ repick: name === "enabled" });
-		this.render();
+		if (name === "interval") {
+			this.api.resetTimer();
+			return;
+		}
+		this.api.refresh({
+			repick: name === "enabled",
+			readers: name === "enabled" || name === "opacity",
+			timer: name === "enabled",
+		});
 	},
 
 	render() {

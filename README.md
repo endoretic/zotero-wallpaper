@@ -2,6 +2,11 @@
 
 A local wallpaper plugin for Zotero 10.
 
+<p align="center">
+  <img src="docs/images/light.png" alt="Light mode" width="49%">
+  <img src="docs/images/night.png" alt="Night mode" width="49%">
+</p>
+
 [中文](#中文) · [English](#english)
 
 ## English
