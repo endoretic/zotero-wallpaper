@@ -3,22 +3,47 @@ var ZoteroWallpaper = {
 	IMAGE_RE: /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i,
 	currentPath: "",
 	timer: null,
-	resizeObservers: new WeakMap(),
+	readerStates: new Map(),
+	readerHandler: null,
+	pluginID: "zotero-wallpaper@endoretic.github.io",
+	readerImageCache: { path: "", uri: "" },
 
-	async startup() {
+	async startup(pluginID = this.pluginID) {
+		this.pluginID = pluginID;
+		this.debug(`startup ${pluginID}`);
 		this.pickRandom();
+		this.debug(`selected ${this.currentPath || "no image"}`);
 		for (let win of Zotero.getMainWindows()) this.attach(win);
+		this.registerReaderIntegration();
 		this.resetTimer();
 	},
 
 	async shutdown() {
 		this.stopTimer();
+		this.unregisterReaderIntegration();
+		for (let reader of this.getReaders()) this.cleanupReader(reader);
+		this.readerImageCache = { path: "", uri: "" };
 		for (let win of Zotero.getMainWindows()) this.detach(win);
 	},
 
 	get(name, fallback) {
 		let value = Zotero.Prefs.get(this.PREF + name, true);
 		return value === undefined ? fallback : value;
+	},
+
+	debug(message) {
+		try {
+			Zotero.debug(`[Zotero Wallpaper] ${message}`);
+			Services.console.logStringMessage(`[Zotero Wallpaper] ${message}`);
+		}
+		catch (_) {}
+	},
+
+	reportError(context, error) {
+		let actualError = error instanceof Error ? error : new Error(`${context}: ${String(error)}`);
+		let message = `${context}: ${actualError}\n${actualError.stack || ""}`;
+		Zotero.logError(actualError);
+		this.debug(message);
 	},
 
 	set(name, value) {
@@ -106,8 +131,7 @@ var ZoteroWallpaper = {
 	attach(win) {
 		let doc = win.document;
 		let pane = doc.getElementById("zotero-pane");
-		let itemsPane = doc.getElementById("zotero-items-pane");
-		if (!pane || !itemsPane || doc.getElementById("zotero-wallpaper-layer")) return;
+		if (!pane || doc.getElementById("zotero-wallpaper-layer")) return;
 
 		let layer = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
 		layer.id = "zotero-wallpaper-layer";
@@ -118,28 +142,13 @@ var ZoteroWallpaper = {
 		style.textContent = this.css;
 		doc.documentElement.append(style);
 
-		let observer = new win.ResizeObserver(() => this.alignItemPane(win));
-		observer.observe(pane);
-		observer.observe(itemsPane);
-		this.resizeObservers.set(win, observer);
-		this.alignItemPane(win);
 		this.applyToWindow(win);
 	},
 
 	detach(win) {
-		this.resizeObservers.get(win)?.disconnect();
-		this.resizeObservers.delete(win);
-		win.document.getElementById("zotero-pane")?.style.removeProperty("--zw-toolbar-height");
 		win.document.getElementById("zotero-wallpaper-layer")?.remove();
 		win.document.getElementById("zotero-wallpaper-style")?.remove();
-	},
-
-	alignItemPane(win) {
-		let pane = win.document.getElementById("zotero-pane");
-		let itemsPane = win.document.getElementById("zotero-items-pane");
-		if (!pane || !itemsPane) return;
-		let height = Math.max(0, Math.round(itemsPane.getBoundingClientRect().top - pane.getBoundingClientRect().top));
-		pane.style.setProperty("--zw-toolbar-height", `${height}px`);
+		win.document.getElementById("zotero-wallpaper-context-style")?.remove();
 	},
 
 	apply() {
@@ -147,6 +156,7 @@ var ZoteroWallpaper = {
 			this.attach(win);
 			this.applyToWindow(win);
 		}
+		this.refreshReaders();
 	},
 
 	applyToWindow(win) {
@@ -154,7 +164,10 @@ var ZoteroWallpaper = {
 		if (!layer) return;
 		let enabled = this.get("enabled", true) && this.isFile(this.currentPath);
 		layer.hidden = !enabled;
-		if (!enabled) return;
+		if (!enabled) {
+			win.document.getElementById("zotero-wallpaper-context-style")?.remove();
+			return;
+		}
 
 		let uri = Services.io.newFileURI(this.file(this.currentPath)).spec;
 		let fit = this.get("fit", "cover");
@@ -169,7 +182,328 @@ var ZoteroWallpaper = {
 		layer.style.backgroundSize = layout[0];
 		layer.style.backgroundPosition = layout[1];
 		layer.style.backgroundRepeat = layout[2];
-		layer.style.opacity = Math.min(100, Math.max(0, Number(this.get("opacity", 30)))) / 100;
+		layer.style.opacity = this.getWallpaperOpacity();
+		this.setDocumentStyle(win.document, "zotero-wallpaper-context-style", this.buildContextPaneCSS(uri));
+	},
+
+	getWallpaperOpacity() {
+		return Math.min(100, Math.max(0, Number(this.get("opacity", 30)))) / 100;
+	},
+
+	getSurfaceOpacity() {
+		return Number((1 - this.getWallpaperOpacity()).toFixed(3));
+	},
+
+	registerReaderIntegration() {
+		if (this.readerHandler) return;
+		if (typeof Zotero.Reader?.registerEventListener !== "function") {
+			this.debug("Zotero Reader API unavailable");
+			return;
+		}
+		this.readerHandler = event => {
+			if (event?.reader) void this.applyToReader(event.reader).catch(error => this.reportError("Reader event failed", error));
+		};
+		try {
+			Zotero.Reader.registerEventListener("renderToolbar", this.readerHandler, this.pluginID);
+			this.debug("Reader renderToolbar listener registered");
+			this.refreshReaders();
+		}
+		catch (error) {
+			this.readerHandler = null;
+			Zotero.logError(error);
+		}
+	},
+
+	unregisterReaderIntegration() {
+		try {
+			if (this.readerHandler && typeof Zotero.Reader?._unregisterEventListenerByPluginID === "function") {
+				Zotero.Reader._unregisterEventListenerByPluginID(this.pluginID);
+			}
+		}
+		catch (error) {
+			Zotero.logError(error);
+		}
+		this.readerHandler = null;
+	},
+
+	getReaders() {
+		try {
+			let readers = Zotero.Reader?._readers;
+			if (!readers) return [];
+			return Array.isArray(readers) ? readers.slice() : Array.from(readers);
+		}
+		catch (_) {
+			return [];
+		}
+	},
+
+	refreshReaders() {
+		for (let reader of this.getReaders()) {
+			void this.applyToReader(reader).catch(error => this.reportError("Reader refresh failed", error));
+		}
+	},
+
+	async applyToReader(reader) {
+		if (!reader) return;
+		let outerWindow = await this.waitForReaderWindow(reader);
+		if (!outerWindow || outerWindow.closed || !outerWindow.document?.documentElement) return;
+
+		let state = this.readerStates.get(reader);
+		if (state?.outerWindow !== outerWindow) {
+			this.cleanupReader(reader);
+			state = null;
+		}
+		if (!state) {
+			state = { outerWindow, observer: null, frames: new Map() };
+			this.readerStates.set(reader, state);
+		}
+
+		let enabled = this.get("enabled", true) && this.isFile(this.currentPath);
+		if (!enabled) {
+			this.cleanupReader(reader);
+			return;
+		}
+
+		let uri = await this.getReaderImageURI();
+		if (!uri) {
+			this.cleanupReader(reader);
+			return;
+		}
+		state.imageURI = uri;
+		this.setDocumentStyle(outerWindow.document, "zotero-wallpaper-reader-style", this.buildReaderCSS(uri));
+		this.scanReaderFrames(reader, state, uri);
+		this.ensureReaderObserver(reader, state);
+		this.debug("Reader shell style applied");
+	},
+
+	async waitForReaderWindow(reader) {
+		for (let attempt = 0; attempt < 60; attempt++) {
+			try {
+				let outerWindow = reader?._iframeWindow;
+				if (outerWindow && !outerWindow.closed && outerWindow.document?.documentElement) return outerWindow;
+			}
+			catch (_) {}
+			await new Promise(resolve => Services.appShell.hiddenDOMWindow.setTimeout(resolve, 50));
+		}
+		return null;
+	},
+
+	ensureReaderObserver(reader, state) {
+		if (state.observer || !state.outerWindow.MutationObserver) return;
+		let splitView = state.outerWindow.document.getElementById("split-view") || state.outerWindow.document.querySelector(".split-view");
+		if (!splitView) return;
+		state.observer = new state.outerWindow.MutationObserver(() => this.scanReaderFrames(reader, state, state.imageURI));
+		state.observer.observe(splitView, { childList: true, subtree: true });
+	},
+
+	scanReaderFrames(reader, state, uri) {
+		let document = state.outerWindow.document;
+		let frames = new Set(document.querySelectorAll("#split-view iframe, .split-view iframe"));
+		this.debug(`Reader frames found: ${frames.size}`);
+		for (let [frame, frameState] of Array.from(state.frames.entries())) {
+			if (frames.has(frame) && frame.isConnected) continue;
+			this.cleanupReaderFrame(frame, frameState);
+			state.frames.delete(frame);
+		}
+		for (let frame of frames) {
+			let frameState = state.frames.get(frame);
+			if (!frameState) {
+				frameState = { loadHandler: () => this.applyReaderFrame(frame, state.imageURI) };
+				frame.addEventListener("load", frameState.loadHandler);
+				state.frames.set(frame, frameState);
+			}
+			this.applyReaderFrame(frame, uri);
+		}
+	},
+
+	applyReaderFrame(frame, uri) {
+		let document = frame.contentDocument;
+		if (!document?.documentElement || !document.querySelector("#viewerContainer, .pdfViewer")) return;
+		this.setDocumentStyle(document, "zotero-wallpaper-pdf-style", this.buildPDFCSS(uri));
+		this.debug("PDF frame style applied");
+	},
+
+	async getReaderImageURI() {
+		let path = this.currentPath;
+		if (!this.isFile(path)) return "";
+		if (this.readerImageCache.path === path && this.readerImageCache.uri) return this.readerImageCache.uri;
+
+		try {
+			let extension = path.split(".").pop().toLowerCase();
+			let mime = {
+				avif: "image/avif",
+				bmp: "image/bmp",
+				gif: "image/gif",
+				jpeg: "image/jpeg",
+				jpg: "image/jpeg",
+				png: "image/png",
+				webp: "image/webp",
+			}[extension] || "application/octet-stream";
+			let uri = await Zotero.File.generateDataURI(path, mime);
+			this.readerImageCache = { path, uri };
+			this.debug("Reader image converted to data URL");
+			return uri;
+		}
+		catch (error) {
+			this.reportError("Reader image conversion failed", error);
+			this.debug("Reader image conversion failed");
+			return "";
+		}
+	},
+
+	setDocumentStyle(document, id, css) {
+		if (!document?.documentElement) return;
+		let style = document.getElementById(id);
+		if (!style) {
+			style = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
+			style.id = id;
+			document.documentElement.append(style);
+		}
+		style.textContent = css;
+	},
+
+	cleanupReaderFrame(frame, frameState) {
+		frame.removeEventListener("load", frameState.loadHandler);
+		frame.contentDocument?.getElementById("zotero-wallpaper-pdf-style")?.remove();
+	},
+
+	cleanupReader(reader) {
+		let state = this.readerStates.get(reader);
+		state?.observer?.disconnect();
+		for (let [frame, frameState] of state?.frames || []) this.cleanupReaderFrame(frame, frameState);
+		let document = state?.outerWindow?.document || reader?._iframeWindow?.document;
+		document?.getElementById("zotero-wallpaper-reader-style")?.remove();
+		this.readerStates.delete(reader);
+	},
+
+	buildReaderCSS(uri) {
+		let image = JSON.stringify(uri);
+		let surfaceOpacity = this.getSurfaceOpacity();
+		return `
+html,
+body,
+#reader-ui,
+#split-view,
+.split-view,
+.primary-view,
+.secondary-view {
+	background-color: transparent !important;
+}
+body {
+	background-image: url(${image}) !important;
+	background-position: center center !important;
+	background-repeat: no-repeat !important;
+	background-size: cover !important;
+	background-attachment: fixed !important;
+}
+.toolbar,
+#reader-ui .toolbar {
+	background-color: rgba(249, 249, 249, .94) !important;
+	backdrop-filter: blur(4px);
+}
+#sidebarContainer {
+	background-color: rgba(242, 242, 242, ${surfaceOpacity}) !important;
+	backdrop-filter: blur(4px);
+}
+#sidebarContent,
+#thumbnailsView,
+.thumbnails-view,
+.thumbnails {
+	background-color: transparent !important;
+	background-image: none !important;
+}
+:root[data-color-scheme="dark"] .toolbar,
+:root[data-color-scheme="dark"] #reader-ui .toolbar {
+	background-color: rgba(39, 39, 39, .94) !important;
+}
+:root[data-color-scheme="dark"] #sidebarContainer {
+	background-color: rgba(48, 48, 48, ${surfaceOpacity}) !important;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-color-scheme="light"]) .toolbar,
+	:root:not([data-color-scheme="light"]) #reader-ui .toolbar {
+		background-color: rgba(39, 39, 39, .94) !important;
+	}
+	:root:not([data-color-scheme="light"]) #sidebarContainer {
+		background-color: rgba(48, 48, 48, ${surfaceOpacity}) !important;
+	}
+}
+`;
+	},
+
+	buildContextPaneCSS(uri) {
+		let image = JSON.stringify(uri);
+		let surfaceOpacity = this.getSurfaceOpacity();
+		return `
+#zotero-context-pane-inner {
+	background-color: transparent !important;
+	background-image: linear-gradient(to bottom, rgba(249, 249, 249, .94) 0 41px, var(--color-panedivider, #dadada) 41px 41.5px, rgba(242, 242, 242, ${surfaceOpacity}) 41.5px), url(${image}) !important;
+	background-position: center center, center center !important;
+	background-repeat: no-repeat, no-repeat !important;
+	background-size: auto, cover !important;
+	background-attachment: scroll, fixed !important;
+	backdrop-filter: blur(4px);
+}
+#zotero-context-pane-deck,
+#zotero-context-pane-item-deck,
+#zotero-context-pane-inner .zotero-item-pane-content,
+#zotero-context-pane-inner .item-pane-container-root,
+#zotero-context-pane-inner item-details,
+#zotero-context-pane-inner .item-details,
+#zotero-context-pane-inner .zotero-view-item-container,
+#zotero-context-pane-inner .zotero-view-item-main,
+#zotero-context-pane-inner .zotero-view-item,
+#zotero-context-pane-inner item-pane-header {
+	background-color: transparent !important;
+	background-image: none !important;
+}
+#zotero-context-pane-item-deck {
+	box-sizing: border-box;
+	padding-top: 41.5px;
+}
+#zotero-context-pane-sidenav {
+	background-color: rgba(249, 249, 249, .94) !important;
+	backdrop-filter: blur(4px);
+}
+@media (prefers-color-scheme: dark) {
+	#zotero-context-pane-inner {
+		background-image: linear-gradient(to bottom, rgba(39, 39, 39, .94) 0 41px, var(--color-panedivider, #404040) 41px 41.5px, rgba(48, 48, 48, ${surfaceOpacity}) 41.5px), url(${image}) !important;
+	}
+	#zotero-context-pane-sidenav {
+		background-color: rgba(39, 39, 39, .94) !important;
+	}
+}
+`;
+	},
+
+	buildPDFCSS(uri) {
+		let image = JSON.stringify(uri);
+		let surfaceOpacity = this.getSurfaceOpacity();
+		return `
+html,
+body,
+#outerContainer,
+#mainContainer,
+.pdfViewer {
+	background-color: transparent !important;
+}
+#viewerContainer {
+	background-color: transparent !important;
+	background-image: linear-gradient(rgba(245, 245, 245, ${surfaceOpacity}), rgba(245, 245, 245, ${surfaceOpacity})), url(${image}) !important;
+	background-position: center center, center center !important;
+	background-repeat: no-repeat, no-repeat !important;
+	background-size: auto, cover !important;
+	background-attachment: scroll, fixed !important;
+}
+:root[data-color-scheme="dark"] #viewerContainer {
+	background-image: linear-gradient(rgba(30, 30, 30, ${surfaceOpacity}), rgba(30, 30, 30, ${surfaceOpacity})), url(${image}) !important;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-color-scheme="light"]) #viewerContainer {
+		background-image: linear-gradient(rgba(30, 30, 30, ${surfaceOpacity}), rgba(30, 30, 30, ${surfaceOpacity})), url(${image}) !important;
+	}
+}
+`;
 	},
 
 	resetTimer() {
@@ -239,6 +573,7 @@ var ZoteroWallpaper = {
 #zotero-pane .virtualized-table .body,
 #zotero-pane .item-pane-content,
 #zotero-pane .zotero-view-item-main,
+#zotero-pane .item-details,
 #zotero-pane item-details {
 	background-color: transparent !important;
 	background-image: none !important;
@@ -249,8 +584,11 @@ var ZoteroWallpaper = {
 }
 #zotero-pane #zotero-item-pane {
 	box-sizing: border-box;
-	padding-top: var(--zw-toolbar-height, 41px);
-	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 var(--zw-toolbar-height, 41px), transparent var(--zw-toolbar-height, 41px)) !important;
+	background: linear-gradient(to bottom, rgba(248, 248, 250, .78) 0 41px, var(--color-panedivider, #dadada) 41px 41.5px, transparent 41.5px) !important;
+}
+#zotero-pane #zotero-item-pane-content {
+	box-sizing: border-box;
+	padding-top: 41.5px;
 }
 #zotero-pane .zotero-toolbar {
 	background-color: rgba(248, 248, 250, .78) !important;
@@ -258,7 +596,7 @@ var ZoteroWallpaper = {
 }
 @media (prefers-color-scheme: dark) {
 	#zotero-pane #zotero-item-pane {
-		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 var(--zw-toolbar-height, 41px), transparent var(--zw-toolbar-height, 41px)) !important;
+		background: linear-gradient(to bottom, rgba(36, 36, 39, .78) 0 41px, var(--color-panedivider, #404040) 41px 41.5px, transparent 41.5px) !important;
 	}
 	#zotero-pane .zotero-toolbar {
 		background-color: rgba(36, 36, 39, .78) !important;
