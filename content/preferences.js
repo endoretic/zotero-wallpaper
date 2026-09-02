@@ -7,11 +7,17 @@ window.ZoteroWallpaper_Preferences = {
 			enable: "Enable wallpaper",
 			enableHint: "Cover the collections, item list, and item details panes.",
 			source: "Image source",
+			wallpaperFor: "Wallpaper for",
+			bothModes: "Both modes",
+			lightMode: "Light mode",
+			darkMode: "Dark mode",
 			pickSingle: "Choose image",
 			pickFolder: "Choose folder",
 			next: "Choose another",
 			display: "Display",
 			opacity: "Opacity",
+			imageBaseColors: "Image base colors",
+			imageBaseColorsHint: "Shown behind transparent pixels in PNG and GIF images.",
 			singleAdjustments: "Single image adjustments",
 			singleAdjustmentsHint: "Size and position refine the selected alignment.",
 			size: "Size",
@@ -34,7 +40,7 @@ window.ZoteroWallpaper_Preferences = {
 			minutes10: "Every 10 minutes",
 			minutes15: "Every 15 minutes",
 			minutes30: "Every 30 minutes",
-			rotationHint: "Folder mode chooses a random wallpaper on startup and avoids immediate repeats when possible.",
+			rotationHint: "Folder mode shuffles every image once before starting a new round.",
 			singleImage: "Single image",
 			folder: "Folder",
 			image: "image",
@@ -49,11 +55,17 @@ window.ZoteroWallpaper_Preferences = {
 			enable: "启用背景壁纸",
 			enableHint: "覆盖文献库的分类、条目列表和条目详情区域。",
 			source: "图片来源",
+			wallpaperFor: "壁纸适用于",
+			bothModes: "两种模式",
+			lightMode: "白天模式",
+			darkMode: "夜间模式",
 			pickSingle: "选择单张图片",
 			pickFolder: "选择壁纸文件夹",
 			next: "随机换一张",
 			display: "显示方式",
 			opacity: "透明度",
+			imageBaseColors: "图片底色",
+			imageBaseColorsHint: "显示在 PNG 和 GIF 图片的透明像素下方。",
 			singleAdjustments: "单图调整",
 			singleAdjustmentsHint: "尺寸和位置在所选的对齐方式上微调。",
 			size: "大小",
@@ -76,7 +88,7 @@ window.ZoteroWallpaper_Preferences = {
 			minutes10: "每 10 分钟",
 			minutes15: "每 15 分钟",
 			minutes30: "每 30 分钟",
-			rotationHint: "文件夹模式下，每次启动都会随机选择一张；定时切换会尽量避免连续显示同一张。",
+			rotationHint: "文件夹模式会将全部图片无重复播放一轮，再开始下一轮洗牌。",
 			singleImage: "单张图片",
 			folder: "文件夹",
 			image: "张",
@@ -101,9 +113,18 @@ window.ZoteroWallpaper_Preferences = {
 
 	init() {
 		this.language = document.getElementById("zw-pref-language");
+		this.wallpaperTheme = document.getElementById("zw-pref-theme");
 		this.enabled = document.getElementById("zw-pref-enabled");
 		this.opacity = document.getElementById("zw-pref-opacity");
 		this.opacityValue = document.getElementById("zw-pref-opacity-value");
+		for (let theme of ["light", "dark"]) {
+			let color = document.getElementById(`zw-pref-${theme}-base-color`);
+			let output = document.getElementById(`zw-pref-${theme}-base-value`);
+			color.value = this.api.get(`${theme}BaseColor`, theme === "dark" ? "#1e1e1e" : "#f4f4f4");
+			output.value = color.value.toUpperCase();
+			color.addEventListener("input", () => output.value = color.value.toUpperCase());
+			color.addEventListener("change", () => this.save(`${theme}BaseColor`, color.value));
+		}
 		this.singleAdjustments = document.getElementById("zw-pref-single-adjustments");
 		this.singleScale = document.getElementById("zw-pref-single-scale");
 		this.singlePositionX = document.getElementById("zw-pref-single-position-x");
@@ -111,6 +132,7 @@ window.ZoteroWallpaper_Preferences = {
 		this.interval = document.getElementById("zw-pref-interval");
 
 		this.language.value = this.languageCode;
+		this.wallpaperTheme.value = this.api.currentTheme;
 		this.enabled.checked = this.api.get("enabled", true);
 		this.opacity.value = this.api.get("opacity", 30);
 		this.singleScale.value = this.api.get("singleScale", 100);
@@ -124,6 +146,7 @@ window.ZoteroWallpaper_Preferences = {
 			this.applyLanguage();
 			this.render();
 		});
+		this.wallpaperTheme.addEventListener("change", () => this.render());
 		this.enabled.addEventListener("change", () => this.save("enabled", this.enabled.checked));
 		this.opacity.addEventListener("input", () => {
 			this.opacityValue.value = `${this.opacity.value}%`;
@@ -161,13 +184,13 @@ window.ZoteroWallpaper_Preferences = {
 			radio.addEventListener("change", () => radio.checked && this.save("fit", radio.value));
 		}
 		document.getElementById("zw-pref-pick-single").addEventListener("click", async () => {
-			if (await this.api.chooseSingle(window)) this.render();
+			if (await this.api.chooseSingle(window, this.wallpaperTheme.value)) this.render();
 		});
 		document.getElementById("zw-pref-pick-folder").addEventListener("click", async () => {
-			if (await this.api.chooseFolder(window)) this.render();
+			if (await this.api.chooseFolder(window, this.wallpaperTheme.value)) this.render();
 		});
 		document.getElementById("zw-pref-next").addEventListener("click", () => {
-			this.api.next();
+			this.api.next(this.wallpaperTheme.value);
 			this.render();
 		});
 
@@ -219,10 +242,12 @@ window.ZoteroWallpaper_Preferences = {
 	},
 
 	render() {
-		let source = this.api.get("source", "single");
+		let theme = this.wallpaperTheme.value;
+		let shownTheme = theme === "both" ? this.api.currentTheme : theme;
+		let source = this.api.getThemeSource(shownTheme);
 		this.singleAdjustments.hidden = source !== "single";
-		let status = this.api.status();
-		let path = this.api.get(source === "folder" ? "folderPath" : "singlePath", "");
+		let status = this.api.status(shownTheme);
+		let path = this.api.getThemePath(shownTheme, source);
 		let countLabel = this.languageCode === "zh-CN"
 			? `${this.text.folder} · ${status.count} ${this.text.images}`
 			: `${this.text.folder} · ${status.count} ${status.count === 1 ? this.text.image : this.text.images}`;

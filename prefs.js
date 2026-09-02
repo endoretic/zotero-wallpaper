@@ -3,6 +3,8 @@ pref("extensions.zotero-wallpaper.source", "single");
 pref("extensions.zotero-wallpaper.singlePath", "");
 pref("extensions.zotero-wallpaper.folderPath", "");
 pref("extensions.zotero-wallpaper.opacity", 30);
+pref("extensions.zotero-wallpaper.lightBaseColor", "#f4f4f4");
+pref("extensions.zotero-wallpaper.darkBaseColor", "#1e1e1e");
 pref("extensions.zotero-wallpaper.fit", "cover");
 pref("extensions.zotero-wallpaper.singleScale", 100);
 pref("extensions.zotero-wallpaper.singlePositionX", 50);
