@@ -20,7 +20,7 @@ var ZoteroWallpaper = {
 	async shutdown() {
 		this.stopTimer();
 		this.unregisterReaderIntegration();
-		for (let reader of this.getReaders()) this.cleanupReader(reader);
+		for (let reader of Array.from(this.readerStates.keys())) this.cleanupReader(reader);
 		for (let win of Zotero.getMainWindows()) this.detach(win);
 	},
 
@@ -320,7 +320,7 @@ var ZoteroWallpaper = {
 				if (outerWindow && !outerWindow.closed && outerWindow.document?.documentElement) return outerWindow;
 			}
 			catch (_) {}
-			await new Promise(resolve => Services.appShell.hiddenDOMWindow.setTimeout(resolve, 50));
+			await Zotero.Promise.delay(50);
 		}
 		return null;
 	},
@@ -542,7 +542,7 @@ body,
 	resetTimer() {
 		this.stopTimer();
 		let minutes = Number(this.get("interval", 0));
-		if (!this.get("enabled", true) || ![5, 10, 15, 30].includes(minutes)) return;
+		if (!this.get("enabled", true) || this.get("source", "single") !== "folder" || ![5, 10, 15, 30].includes(minutes)) return;
 		this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 		this.timer.initWithCallback(() => this.next(), minutes * 60 * 1000, Ci.nsITimer.TYPE_REPEATING_SLACK);
 	},
