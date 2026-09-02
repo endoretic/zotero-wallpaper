@@ -1,7 +1,10 @@
 var ZoteroWallpaper = {
 	PREF: "extensions.zotero-wallpaper.",
 	IMAGE_RE: /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i,
-	currentPath: "",
+	currentTheme: "light",
+	currentPaths: { light: "", dark: "" },
+	shuffleBags: new Map(),
+	themeWatchers: new Map(),
 	timer: null,
 	readerStates: new Map(),
 	readerHandler: null,
@@ -10,8 +13,9 @@ var ZoteroWallpaper = {
 	async startup(pluginID = this.pluginID) {
 		this.pluginID = pluginID;
 		this.debug(`startup ${pluginID}`);
-		this.pickRandom();
-		this.debug(`selected ${this.currentPath || "no image"}`);
+		this.currentTheme = this.detectTheme(Zotero.getMainWindows()[0]);
+		this.pickRandom(this.currentTheme);
+		this.debug(`selected ${this.getCurrentPath() || "no image"}`);
 		for (let win of Zotero.getMainWindows()) this.attach(win);
 		this.registerReaderIntegration();
 		this.resetTimer();
@@ -22,6 +26,7 @@ var ZoteroWallpaper = {
 		this.unregisterReaderIntegration();
 		for (let reader of Array.from(this.readerStates.keys())) this.cleanupReader(reader);
 		for (let win of Zotero.getMainWindows()) this.detach(win);
+		this.shuffleBags.clear();
 	},
 
 	get(name, fallback) {
@@ -52,9 +57,28 @@ var ZoteroWallpaper = {
 		return this.get("language", "en") === "zh-CN" ? chinese : english;
 	},
 
-	getImages() {
-		let source = this.get("source", "single");
-		let path = this.get(source === "folder" ? "folderPath" : "singlePath", "");
+	getThemeSource(theme = this.currentTheme) {
+		return this.get(`${theme}Source`, this.get("source", "single"));
+	},
+
+	getThemePath(theme = this.currentTheme, source = this.getThemeSource(theme)) {
+		let name = source === "folder" ? "folderPath" : "singlePath";
+		return this.get(`${theme}${name[0].toUpperCase()}${name.slice(1)}`, this.get(name, ""));
+	},
+
+	getCurrentPath(theme = this.currentTheme) {
+		return this.currentPaths[theme] || "";
+	},
+
+	getBaseColor(theme = this.currentTheme) {
+		let fallback = theme === "dark" ? "#1e1e1e" : "#f4f4f4";
+		let color = this.get(`${theme}BaseColor`, fallback);
+		return /^#[\da-f]{6}$/i.test(color) ? color : fallback;
+	},
+
+	getImages(theme = this.currentTheme) {
+		let source = this.getThemeSource(theme);
+		let path = this.getThemePath(theme, source);
 		if (!path) return [];
 		if (source === "single") return this.IMAGE_RE.test(path) && this.isFile(path) ? [path] : [];
 
@@ -91,37 +115,76 @@ var ZoteroWallpaper = {
 		}
 	},
 
-	pickRandom() {
-		let images = this.getImages();
+	pickRandom(theme = this.currentTheme) {
+		let images = this.getImages(theme);
 		if (!images.length) {
-			this.currentPath = "";
+			this.currentPaths[theme] = "";
 			return "";
 		}
-		let choices = images.length > 1 ? images.filter(path => path !== this.currentPath) : images;
-		this.currentPath = choices[Math.floor(Math.random() * choices.length)];
-		return this.currentPath;
+		if (this.getThemeSource(theme) === "single") return this.currentPaths[theme] = images[0];
+
+		let key = `${theme}\0${this.getThemePath(theme, "folder")}`;
+		let signature = images.join("\0");
+		let bag = this.shuffleBags.get(key);
+		if (!bag || bag.signature !== signature || !bag.paths.length) {
+			let paths = images.slice();
+			for (let i = paths.length - 1; i > 0; i--) {
+				let j = Math.floor(Math.random() * (i + 1));
+				[paths[i], paths[j]] = [paths[j], paths[i]];
+			}
+			let current = this.getCurrentPath(theme);
+			if (paths.length > 1 && paths[paths.length - 1] === current) [paths[0], paths[paths.length - 1]] = [paths[paths.length - 1], paths[0]];
+			bag = { signature, paths };
+			this.shuffleBags.set(key, bag);
+		}
+		return this.currentPaths[theme] = bag.paths.pop();
 	},
 
-	next() {
-		this.pickRandom();
-		this.apply({ readers: false });
+	next(theme = this.currentTheme) {
+		let themes = theme === "both" ? ["light", "dark"] : [theme];
+		for (let value of themes) this.pickRandom(value);
+		if (themes.includes(this.currentTheme)) this.apply({ readers: false });
 	},
 
 	refresh({ repick = false, readers = true, timer = true } = {}) {
-		if (repick || !this.isFile(this.currentPath)) {
-			this.pickRandom();
+		if (repick || !this.isFile(this.getCurrentPath())) {
+			this.pickRandom(this.currentTheme);
 		}
 		this.apply({ readers });
 		if (timer) this.resetTimer();
 	},
 
-	status() {
-		let images = this.getImages();
+	status(theme = this.currentTheme) {
+		let images = this.getImages(theme);
+		let currentPath = this.getCurrentPath(theme);
 		return {
 			count: images.length,
-			currentPath: this.currentPath,
-			currentName: this.currentPath ? this.file(this.currentPath).leafName : "",
+			currentPath,
+			currentName: currentPath ? this.file(currentPath).leafName : "",
 		};
+	},
+
+	detectTheme(win) {
+		let scheme = win?.document?.documentElement?.getAttribute("data-color-scheme");
+		if (scheme === "dark" || scheme === "light") return scheme;
+		return win?.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+	},
+
+	watchTheme(win) {
+		if (this.themeWatchers.has(win)) return;
+		let media = win.matchMedia?.("(prefers-color-scheme: dark)");
+		let update = () => {
+			let theme = this.detectTheme(win);
+			if (theme === this.currentTheme) return;
+			this.currentTheme = theme;
+			if (!this.getImages(theme).includes(this.getCurrentPath(theme))) this.pickRandom(theme);
+			this.apply();
+			this.resetTimer();
+		};
+		media?.addEventListener?.("change", update);
+		let observer = new win.MutationObserver(update);
+		observer.observe(win.document.documentElement, { attributes: true, attributeFilter: ["data-color-scheme"] });
+		this.themeWatchers.set(win, { media, update, observer });
 	},
 
 	attach(win) {
@@ -141,11 +204,16 @@ var ZoteroWallpaper = {
 		style.textContent = this.css;
 		doc.documentElement.append(style);
 
+		this.watchTheme(win);
 		this.applyToWindow(win);
 		return true;
 	},
 
 	detach(win) {
+		let watcher = this.themeWatchers.get(win);
+		watcher?.media?.removeEventListener?.("change", watcher.update);
+		watcher?.observer.disconnect();
+		this.themeWatchers.delete(win);
 		win.document.getElementById("zotero-wallpaper-layer")?.remove();
 		win.document.getElementById("zotero-wallpaper-style")?.remove();
 		win.document.getElementById("zotero-wallpaper-context-style")?.remove();
@@ -167,14 +235,16 @@ var ZoteroWallpaper = {
 			image.id = "zotero-wallpaper-image";
 			layer.append(image);
 		}
-		let enabled = this.get("enabled", true) && this.isFile(this.currentPath);
+		let currentPath = this.getCurrentPath();
+		layer.style.backgroundColor = this.getBaseColor();
+		let enabled = this.get("enabled", true) && this.isFile(currentPath);
 		layer.hidden = !enabled;
 		if (!enabled) {
 			win.document.getElementById("zotero-wallpaper-context-style")?.remove();
 			return;
 		}
 
-		let uri = Services.io.newFileURI(this.file(this.currentPath)).spec;
+		let uri = Services.io.newFileURI(this.file(currentPath)).spec;
 		let fit = this.get("fit", "cover");
 		let layout = {
 			cover: ["cover", "center", "no-repeat"],
@@ -186,7 +256,7 @@ var ZoteroWallpaper = {
 		image.style.backgroundImage = `url("${uri}")`;
 		image.style.backgroundSize = layout[0];
 		image.style.backgroundRepeat = layout[2];
-		if (this.get("source", "single") === "single") {
+		if (this.getThemeSource() === "single") {
 			this.applySingleLayout(image);
 		}
 		else {
@@ -212,7 +282,7 @@ var ZoteroWallpaper = {
 	},
 
 	previewSingleLayout(scale, x, y) {
-		if (this.get("source", "single") !== "single") return;
+		if (this.getThemeSource() !== "single") return;
 		for (let win of Zotero.getMainWindows()) {
 			let image = win.document.getElementById("zotero-wallpaper-image");
 			if (image) this.applySingleLayout(image, scale, x, y);
@@ -302,7 +372,7 @@ var ZoteroWallpaper = {
 			this.readerStates.set(reader, state);
 		}
 
-		let enabled = this.get("enabled", true) && this.isFile(this.currentPath);
+		let enabled = this.get("enabled", true) && this.isFile(this.getCurrentPath());
 		if (!enabled) {
 			this.cleanupReader(reader);
 			return;
@@ -542,7 +612,7 @@ body,
 	resetTimer() {
 		this.stopTimer();
 		let minutes = Number(this.get("interval", 0));
-		if (!this.get("enabled", true) || this.get("source", "single") !== "folder" || ![5, 10, 15, 30].includes(minutes)) return;
+		if (!this.get("enabled", true) || this.getThemeSource() !== "folder" || ![5, 10, 15, 30].includes(minutes)) return;
 		this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 		this.timer.initWithCallback(() => this.next(), minutes * 60 * 1000, Ci.nsITimer.TYPE_REPEATING_SLACK);
 	},
@@ -552,26 +622,35 @@ body,
 		this.timer = null;
 	},
 
-	async chooseSingle(parentWindow) {
+	async chooseSingle(parentWindow, theme = this.currentTheme) {
 		let { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
 		let picker = new FilePicker();
 		picker.init(parentWindow, this.text("Choose a wallpaper", "选择一张壁纸"), picker.modeOpen);
 		picker.appendFilter(this.text("Images", "图片"), "*.avif; *.bmp; *.gif; *.jpg; *.jpeg; *.png; *.webp");
 		if (await picker.show() !== picker.returnOK) return null;
-		this.set("source", "single");
-		this.set("singlePath", picker.file);
-		this.refresh({ repick: true });
+		let themes = theme === "both" ? ["light", "dark"] : [theme];
+		for (let value of themes) {
+			this.set(`${value}Source`, "single");
+			this.set(`${value}SinglePath`, picker.file);
+			this.pickRandom(value);
+		}
+		if (themes.includes(this.currentTheme)) this.refresh({ timer: true });
 		return true;
 	},
 
-	async chooseFolder(parentWindow) {
+	async chooseFolder(parentWindow, theme = this.currentTheme) {
 		let { FilePicker } = ChromeUtils.importESModule("chrome://zotero/content/modules/filePicker.mjs");
 		let picker = new FilePicker();
 		picker.init(parentWindow, this.text("Choose a wallpaper folder", "选择壁纸文件夹"), picker.modeGetFolder);
 		if (await picker.show() !== picker.returnOK) return null;
-		this.set("source", "folder");
-		this.set("folderPath", picker.file);
-		this.refresh({ repick: true });
+		let themes = theme === "both" ? ["light", "dark"] : [theme];
+		for (let value of themes) {
+			this.set(`${value}Source`, "folder");
+			this.set(`${value}FolderPath`, picker.file);
+		}
+		this.shuffleBags.clear();
+		for (let value of themes) this.pickRandom(value);
+		if (themes.includes(this.currentTheme)) this.refresh({ timer: true });
 		return true;
 	},
 

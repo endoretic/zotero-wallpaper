@@ -22,6 +22,13 @@
 
 	<groupbox>
 		<label><html:h2 data-i18n="source">Image source</html:h2></label>
+		<html:label class="zw-pref-field" for="zw-pref-theme"><html:span data-i18n="wallpaperFor">Wallpaper for</html:span>
+			<html:select id="zw-pref-theme">
+				<html:option value="both" data-i18n="bothModes">Both modes</html:option>
+				<html:option value="light" data-i18n="lightMode">Light mode</html:option>
+				<html:option value="dark" data-i18n="darkMode">Dark mode</html:option>
+			</html:select>
+		</html:label>
 		<html:div class="zw-pref-source-actions">
 			<html:button id="zw-pref-pick-single" type="button" data-i18n="pickSingle">Choose image</html:button>
 			<html:button id="zw-pref-pick-folder" type="button" data-i18n="pickFolder">Choose folder</html:button>
@@ -41,6 +48,14 @@
 			<html:input id="zw-pref-opacity" type="range" min="0" max="100" step="1"/>
 			<html:output id="zw-pref-opacity-value">30%</html:output>
 		</html:label>
+		<html:fieldset class="zw-pref-base-colors">
+			<html:legend data-i18n="imageBaseColors">Image base colors</html:legend>
+			<html:p data-i18n="imageBaseColorsHint">Shown behind transparent pixels in PNG and GIF images.</html:p>
+			<html:div>
+				<html:label><html:span data-i18n="lightMode">Light mode</html:span><html:input id="zw-pref-light-base-color" type="color"/><html:output id="zw-pref-light-base-value">#F4F4F4</html:output></html:label>
+				<html:label><html:span data-i18n="darkMode">Dark mode</html:span><html:input id="zw-pref-dark-base-color" type="color"/><html:output id="zw-pref-dark-base-value">#1E1E1E</html:output></html:label>
+			</html:div>
+		</html:fieldset>
 		<html:fieldset class="zw-pref-fit">
 			<html:legend data-i18n="alignment">Alignment</html:legend>
 			<html:label><html:input type="radio" name="zw-pref-fit" value="cover"/><html:span data-i18n="cover">Cover</html:span><html:small data-i18n="coverHint">Fill the area and crop if needed</html:small></html:label>
@@ -82,6 +97,6 @@
 				<html:option value="30" data-i18n="minutes30">Every 30 minutes</html:option>
 			</html:select>
 		</html:label>
-		<html:p class="zw-pref-hint" data-i18n="rotationHint">Folder mode chooses a random wallpaper on startup and avoids immediate repeats when possible.</html:p>
+		<html:p class="zw-pref-hint" data-i18n="rotationHint">Folder mode shuffles every image once before starting a new round.</html:p>
 	</groupbox>
 </vbox>

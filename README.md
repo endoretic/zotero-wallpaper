@@ -13,7 +13,7 @@ Wallpaper & UI optimization for Zotero 10.
 
 ## English
 
-Supports one image or a folder, random selection on startup, 5/10/15/30-minute rotation, opacity control, Cover/Contain/Center/Stretch layouts, and single-image sizing and positioning.
+Supports separate light/dark wallpapers, one image or a folder, shuffle rotation without repeats, opacity control, Cover/Contain/Center/Stretch layouts, and single-image sizing and positioning.
 
 Download the XPI from [Releases](https://github.com/endoretic/zotero-wallpaper/releases), install it from `Tools → Plugins`, then configure it under `Edit → Settings → Zotero Wallpaper`.
 
@@ -33,7 +33,7 @@ Compatibility: May conflict with theme plugins.
 
 ## 中文
 
-支持单张图片或文件夹、启动时随机选择、5/10/15/30 分钟随机切换、透明度调节、覆盖/填充/居中/拉伸布局，以及单图大小与位置调整。
+支持白天/夜间分别设置壁纸、单张图片或文件夹、无重复洗牌切换、透明度调节、覆盖/填充/居中/拉伸布局，以及单图大小与位置调整。
 
 从 [Releases](https://github.com/endoretic/zotero-wallpaper/releases) 下载 XPI，通过 `工具 → 插件` 安装，然后前往 `编辑 → 设置 → Zotero Wallpaper` 配置。
 
